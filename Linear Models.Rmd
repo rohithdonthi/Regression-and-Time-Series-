@@ -1,0 +1,143 @@
+```{r}
+# Load necessary libraries
+library(glmnet)
+library(Metrics)
+library(caret)
+library(yardstick)
+```
+
+
+```{r}
+# Read data from CSV file
+df <- read.csv("CleanedData1.csv")
+
+# Assuming your dependent variable is 'shares'
+y <- df$shares
+
+# Assuming your independent variables are all columns except 'shares'
+X <- as.matrix(df[, -which(names(df) == "shares")])
+
+# Standardize the features (important for Lasso regression)
+X_scaled <- scale(X)
+
+```
+
+```{r}
+normalize_data <- function(x, method = "min_max") {
+  if (method == "min_max") {
+    return ((x - min(x)) / (max(x) - min(x)))
+  } else if (method == "z_score") {
+    return ((x - mean(x)) / sd(x))
+  } else {
+    stop("Invalid normalization method. Choose 'min_max' or 'z_score'.")
+  }
+}
+```
+
+
+```{r}
+# Set up k-fold cross-validation
+set.seed(123)  # for reproducibility
+folds <- createFolds(y, k = 5, list = TRUE)
+```
+
+
+```{r}
+# Initialize variables to store results
+lasso_mse <- elasticnet_mse <- ridge_mse <- linear_mse <- poisson_mse <- numeric()
+lasso_aic <- elasticnet_aic <- ridge_aic <- linear_aic <- poisson_aic <- numeric()
+lasso_bic <- elasticnet_bic <- ridge_bic <- linear_bic <- poisson_bic <- numeric()
+```
+
+```{r}
+# Perform k-fold cross-validation
+for (fold in folds) {
+  # Extract training and testing sets for the current fold
+  train_data <- df[-fold, ]
+  test_data <- df[fold, ]
+  
+    # Fit Ridge regression
+  ridge_model <- cv.glmnet(x = as.matrix(train_data[, -which(names(df) == "shares")]), y = train_data$shares, alpha = 0)
+  ridge_pred <- predict(ridge_model, newx = as.matrix(test_data[, -which(names(df) == "shares")]), s = "lambda.min")
+  ridge_mse <- c(ridge_mse, mse(test_data$shares, ridge_pred))
+  ridge_aic <- c(ridge_aic, ridge_model$lambda.min)  # AIC is stored in the model
+  ridge_bic <- c(ridge_bic, log(nrow(train_data)) * length(ridge_model$glmnet.fit$lambda) + 2 * sum(ridge_model$glmnet.fit$df))
+  
+  # Fit Linear regression
+  linear_model <- lm(shares ~ ., data = train_data)
+  linear_pred <- predict(linear_model, newdata = test_data)
+  linear_mse <- c(linear_mse, mse(test_data$shares, linear_pred))
+  linear_aic <- c(linear_aic, AIC(linear_model))
+  linear_bic <- c(linear_bic, BIC(linear_model))
+  sum(linear_model$glmnet.fit$df)
+  
+  # Fit Lasso regression
+  lasso_model <- cv.glmnet(x = as.matrix(train_data[, -which(names(df) == "shares")]), y = train_data$shares, alpha = 1)
+  lasso_pred <- predict(lasso_model, newx = as.matrix(test_data[, -which(names(df) == "shares")]), s = "lambda.min")
+  lasso_mse <- c(lasso_mse, mse(test_data$shares, lasso_pred))
+  lasso_aic <- c(lasso_aic, lasso_model$lambda.min)  # AIC is stored in the model
+  lasso_bic <- c(lasso_bic, log(nrow(train_data)) * length(lasso_model$glmnet.fit$lambda) + 2 * sum(lasso_model$glmnet.fit$df))
+  
+  # Fit Elastic Net regression
+  elasticnet_model <- cv.glmnet(x = as.matrix(train_data[, -which(names(df) == "shares")]), y = train_data$shares, alpha = 0.5)
+  elasticnet_pred <- predict(elasticnet_model, newx = as.matrix(test_data[, -which(names(df) == "shares")]), s = "lambda.min")
+  elasticnet_mse <- c(elasticnet_mse, mse(test_data$shares, elasticnet_pred))
+  elasticnet_aic <- c(elasticnet_aic, elasticnet_model$lambda.min)  # AIC is stored in the model
+  elasticnet_bic <- c(elasticnet_bic, log(nrow(train_data)) * length(elasticnet_model$glmnet.fit$lambda) + 2 * sum(elasticnet_model$glmnet.fit$df))
+  
+  # Fit Poisson regression
+  poisson_model <- glm(shares ~ ., data = train_data, family = poisson(link = "log"))
+  poisson_pred <- predict(poisson_model, newdata = test_data, type = "response")
+  poisson_mse <- c(poisson_mse, mse(test_data$shares, poisson_pred))
+  poisson_aic <- c(poisson_aic, AIC(poisson_model))
+  poisson_bic <- c(poisson_bic, BIC(poisson_model))
+  sum(poisson_model$glmnet.fit$df)
+}
+```
+```{r}
+# Calculate average MSE over all folds
+lasso_avg_mse <- mean(lasso_mse)
+elasticnet_avg_mse <- mean(elasticnet_mse)
+ridge_avg_mse <- mean(ridge_mse)
+linear_avg_mse <- mean(linear_mse)
+poisson_avg_mse <- mean(poisson_mse)
+```
+
+
+```{r}
+# Compare MSE results
+results_mse <- data.frame(
+  Model = c("Lasso", "Elastic Net", "Ridge", "Linear Regression", "Poisson Regression"),
+  Average_MSE = c(lasso_avg_mse, elasticnet_avg_mse, ridge_avg_mse, linear_avg_mse, poisson_avg_mse)
+)
+
+print("MSE Results:")
+print(results_mse)
+```
+
+```{r}
+# Calculate average AIC and BIC over all folds
+lasso_avg_aic <- mean(lasso_aic)
+elasticnet_avg_aic <- mean(elasticnet_aic)
+ridge_avg_aic <- mean(ridge_aic)
+linear_avg_aic <- mean(linear_aic)
+poisson_avg_aic <- mean(poisson_aic)
+
+lasso_avg_bic <- mean(lasso_bic)
+elasticnet_avg_bic <- mean(elasticnet_bic)
+ridge_avg_bic <- mean(ridge_bic)
+linear_avg_bic <- mean(linear_bic)
+poisson_avg_bic <- mean(poisson_bic)
+```
+```{r}
+# Compare AIC and BIC results
+results_aic_bic <- data.frame(
+  Model = c("Lasso", "Elastic Net", "Ridge", "Linear Regression", "Poisson Regression"),
+  Average_AIC = c(lasso_avg_aic, elasticnet_avg_aic, ridge_avg_aic, linear_avg_aic, poisson_avg_aic),
+  Average_BIC = c(lasso_avg_bic, elasticnet_avg_bic, ridge_avg_bic, linear_avg_bic, poisson_avg_bic)
+)
+
+print("AIC and BIC Results:")
+print(results_aic_bic)
+
+```
