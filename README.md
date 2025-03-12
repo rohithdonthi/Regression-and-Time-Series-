@@ -5,5 +5,7 @@ This project focuses on analyzing the popularity of online news articles using A
 Key contributions include:
 
 Improved content reach predictions by 25% through AI-driven business intelligence insights.
+
 Conducted feature importance analysis to identify key factors influencing news popularity.
+
 This project demonstrates the power of machine learning and NLP in media analytics, offering actionable insights for editorial strategies. 
